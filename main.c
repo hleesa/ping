@@ -3,10 +3,12 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <string.h>
-#include <netinet/ip_icmp.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #define PACKET_SIZE 64
+#define ICMP_ECHO_REQUEST 8
+#define ICMP_ECHO_REPLY 0
 
 struct icmphdr {
     unsigned char type;
@@ -21,7 +23,7 @@ unsigned short checksum(void* b, int len){
     unsigned int sum = 0;
     unsigned short result;
 
-    for (int sum = 0; len > 1; len -= 2) {
+    for (sum = 0; len > 1; len -= 2) {
         sum += *buf++;
     }
     if (len == 1) {
@@ -57,19 +59,28 @@ int main(int argc, char* argv[]){
         return 1;
     }
 
+    struct timeval timeout;
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
     struct sockaddr_in dest;
     memset(&dest, 0, sizeof(dest));
     dest.sin_family = AF_INET;
     dest.sin_addr.s_addr = inet_addr(target_ip);
 
     char packet[PACKET_SIZE];
+    memset(packet, 0, PACKET_SIZE);
     struct icmphdr * icmp = (struct icmphdr*) packet;
-    icmp->type = 8;
+    icmp->type = ICMP_ECHO_REQUEST;
     icmp->code = 0;
     icmp->id = getpid();
     icmp->sequence = 1;
     icmp->checksum = 0;
     icmp->checksum = checksum(packet, PACKET_SIZE);
+
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
 
     int sent = sendto(sock, packet, PACKET_SIZE, 0, (struct sockaddr*)&dest, sizeof(dest));
     if (sent < 0) {
@@ -77,7 +88,28 @@ int main(int argc, char* argv[]){
         close(sock);
         return 1;
     }
-    printf("ICMP 에코 요청 전송 완료 (%d 바이트)\n", sent);
+
+    char recv_packet[PACKET_SIZE];
+    struct sockaddr_in from;
+    socklen_t from_len = sizeof(from);
+    int received = recvfrom(sock, recv_packet, PACKET_SIZE, 0, (struct sockaddr *)&from, &from_len );
+    if(received < 0){
+        perror("응답 수신 실패");
+        close(sock);
+        return 1;
+    }
+
+    gettimeofday(&end, NULL);
+
+    struct icmphdr * recv_icmp = (struct icmphdr*)(recv_packet + 20);
+    if (recv_icmp->type == ICMP_ECHO_REPLY && recv_icmp->id == icmp->id) {
+        double rtt = (end.tv_sec - start.tv_sec) * 1000.0 +
+                     (end.tv_usec - start.tv_usec) / 1000.0;
+        printf("응답 from %s: seq=%d time=%.2f ms\n", inet_ntoa(from.sin_addr), recv_icmp->sequence, rtt);
+    }
+    else{
+        printf("예상치 않은 응답 수신\n");
+    }
 
     close(sock);
     return 0;
