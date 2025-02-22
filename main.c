@@ -37,16 +37,39 @@ unsigned short checksum(void* b, int len){
     return result;
 }
 
+void print_help(){
+    printf("사용법: ft_ping [-v] [-?] <호스트 이름>\n");
+    printf("옵션:\n");
+    printf("  -v   상세 출력 (오류 포함)\n");
+    printf("  -?   도움말 표시\n");
+}
+
 int main(int argc, char* argv[]){
-    if(argc != 2){
-        printf("사용법: %s <호스트 이름>\n", argv[0]);
+    int opt, verbose = 0;
+    while ((opt = getopt(argc, argv, "v?")) != -1) {
+        switch (opt) {
+            case 'v':
+                verbose = 1;
+                break;
+            case '?':
+                print_help();
+                return 0;
+            default:
+                print_help();
+                return 1;
+        }
+    }
+
+    if (optind >= argc) {
+        printf("ft_ping: 호스트 이름을 입력하세요\n");
+        print_help();
         return 1;
     }
 
-    char* hostname = argv[1];
+    char* hostname = argv[optind];
     struct hostent* host = gethostbyname(hostname);
     if (host == NULL) {
-        printf("호스트 이름 변환 실패: %s\n", hostname);
+        printf("ft_ping: 호스트 이름 변환 실패: %s\n", hostname);
         return 1;
     }
 
@@ -81,7 +104,7 @@ int main(int argc, char* argv[]){
         icmp->type = ICMP_ECHO_REQUEST;
         icmp->code = 0;
         icmp->id = getpid();
-        icmp->sequence = i + 1;
+        icmp->sequence = i;
         icmp->checksum = checksum(packet, PACKET_SIZE);
 
         struct timeval start, end;
@@ -89,9 +112,9 @@ int main(int argc, char* argv[]){
 
         int sent = sendto(sock, packet, PACKET_SIZE, 0, (struct sockaddr*) &dest, sizeof(dest));
         if (sent < 0) {
-            perror("패킷 전송 실패");
+            perror("ft_ping: 패킷 전송 실패");
             close(sock);
-            return 1;
+            continue;
         }
         sent_count++;
 
@@ -100,7 +123,7 @@ int main(int argc, char* argv[]){
         socklen_t from_len = sizeof(from);
         int received = recvfrom(sock, recv_packet, PACKET_SIZE, 0, (struct sockaddr*) &from, &from_len);
         if (received < 0) {
-            printf("%d bytes to %s: seq=%d timeout\n", PACKET_SIZE, target_ip, icmp->sequence);
+            printf("ft_ping: %d bytes to %s: seq=%d timeout\n", PACKET_SIZE, hostname, icmp->sequence);
             sleep(1);
             continue;
         }
@@ -116,14 +139,14 @@ int main(int argc, char* argv[]){
             recv_count++;
             total_rtt += rtt;
         }
-        else {
-            printf("예상치 않은 응답 수신\n");
+        else if (verbose){
+            printf("ft_ping: %d bytes from %s: type=%d code=%d seq=%d\n",
+                   received, hostname, recv_icmp->type, recv_icmp->code, recv_icmp->sequence);
         }
         sleep(1);
     }
 
-    // 통계 출력
-    printf("\n--- %s ping 통계 ---\n", hostname);
+    printf("\n--- %s ft_ping 통계 ---\n", hostname);
     printf("전송: %d, 수신: %d, 손실: %d%%, 평균 시간: %.2f ms\n",
            sent_count, recv_count,
            sent_count ? ((sent_count - recv_count) * 100 / sent_count) : 0,
