@@ -1,0 +1,15 @@
+# CLion 설정 파일
+.idea/
+
+# 빌드 관련 파일 및 폴더
+CMakeLists.txt
+build/
+cmake-build-debug/
+cmake-build-release/
+
+# 컴파일 결과물
+*.o
+*.obj
+*.so
+*.exe
+*.dll
