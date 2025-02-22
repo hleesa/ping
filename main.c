@@ -100,9 +100,9 @@ int main(int argc, char* argv[]){
         socklen_t from_len = sizeof(from);
         int received = recvfrom(sock, recv_packet, PACKET_SIZE, 0, (struct sockaddr*) &from, &from_len);
         if (received < 0) {
-            perror("응답 수신 실패");
-            close(sock);
-            return 1;
+            printf("%d bytes to %s: seq=%d timeout\n", PACKET_SIZE, target_ip, icmp->sequence);
+            sleep(1);
+            continue;
         }
 
         gettimeofday(&end, NULL);
@@ -111,7 +111,10 @@ int main(int argc, char* argv[]){
         if (recv_icmp->type == ICMP_ECHO_REPLY && recv_icmp->id == icmp->id) {
             double rtt = (end.tv_sec - start.tv_sec) * 1000.0 +
                          (end.tv_usec - start.tv_usec) / 1000.0;
-            printf("응답 from %s: seq=%d time=%.2f ms\n", inet_ntoa(from.sin_addr), recv_icmp->sequence, rtt);
+            printf("%d bytes from %s: seq=%d time=%.2f ms\n",
+                   received, inet_ntoa(from.sin_addr), recv_icmp->sequence, rtt);
+            recv_count++;
+            total_rtt += rtt;
         }
         else {
             printf("예상치 않은 응답 수신\n");
