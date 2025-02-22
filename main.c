@@ -76,7 +76,6 @@ int main(int argc, char* argv[]){
     icmp->code = 0;
     icmp->id = getpid();
     icmp->sequence = 1;
-    icmp->checksum = 0;
     icmp->checksum = checksum(packet, PACKET_SIZE);
 
     struct timeval start, end;
