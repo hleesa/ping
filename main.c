@@ -9,6 +9,7 @@
 #define PACKET_SIZE 64
 #define ICMP_ECHO_REQUEST 8
 #define ICMP_ECHO_REPLY 0
+#define PING_COUNT 4
 
 struct icmphdr {
     unsigned char type;
@@ -69,46 +70,61 @@ int main(int argc, char* argv[]){
     dest.sin_family = AF_INET;
     dest.sin_addr.s_addr = inet_addr(target_ip);
 
-    char packet[PACKET_SIZE];
-    memset(packet, 0, PACKET_SIZE);
-    struct icmphdr * icmp = (struct icmphdr*) packet;
-    icmp->type = ICMP_ECHO_REQUEST;
-    icmp->code = 0;
-    icmp->id = getpid();
-    icmp->sequence = 1;
-    icmp->checksum = checksum(packet, PACKET_SIZE);
+    int sent_count = 0, recv_count = 0;
+    double total_rtt = 0.0;
 
-    struct timeval start, end;
-    gettimeofday(&start, NULL);
+    for(int i = 0; i < PING_COUNT; ++i) {
 
-    int sent = sendto(sock, packet, PACKET_SIZE, 0, (struct sockaddr*)&dest, sizeof(dest));
-    if (sent < 0) {
-        perror("패킷 전송 실패");
-        close(sock);
-        return 1;
+        char packet[PACKET_SIZE];
+        memset(packet, 0, PACKET_SIZE);
+        struct icmphdr* icmp = (struct icmphdr*) packet;
+        icmp->type = ICMP_ECHO_REQUEST;
+        icmp->code = 0;
+        icmp->id = getpid();
+        icmp->sequence = i + 1;
+        icmp->checksum = checksum(packet, PACKET_SIZE);
+
+        struct timeval start, end;
+        gettimeofday(&start, NULL);
+
+        int sent = sendto(sock, packet, PACKET_SIZE, 0, (struct sockaddr*) &dest, sizeof(dest));
+        if (sent < 0) {
+            perror("패킷 전송 실패");
+            close(sock);
+            return 1;
+        }
+        sent_count++;
+
+        char recv_packet[PACKET_SIZE];
+        struct sockaddr_in from;
+        socklen_t from_len = sizeof(from);
+        int received = recvfrom(sock, recv_packet, PACKET_SIZE, 0, (struct sockaddr*) &from, &from_len);
+        if (received < 0) {
+            perror("응답 수신 실패");
+            close(sock);
+            return 1;
+        }
+
+        gettimeofday(&end, NULL);
+
+        struct icmphdr* recv_icmp = (struct icmphdr*) (recv_packet + 20);
+        if (recv_icmp->type == ICMP_ECHO_REPLY && recv_icmp->id == icmp->id) {
+            double rtt = (end.tv_sec - start.tv_sec) * 1000.0 +
+                         (end.tv_usec - start.tv_usec) / 1000.0;
+            printf("응답 from %s: seq=%d time=%.2f ms\n", inet_ntoa(from.sin_addr), recv_icmp->sequence, rtt);
+        }
+        else {
+            printf("예상치 않은 응답 수신\n");
+        }
+        sleep(1);
     }
 
-    char recv_packet[PACKET_SIZE];
-    struct sockaddr_in from;
-    socklen_t from_len = sizeof(from);
-    int received = recvfrom(sock, recv_packet, PACKET_SIZE, 0, (struct sockaddr *)&from, &from_len );
-    if(received < 0){
-        perror("응답 수신 실패");
-        close(sock);
-        return 1;
-    }
-
-    gettimeofday(&end, NULL);
-
-    struct icmphdr * recv_icmp = (struct icmphdr*)(recv_packet + 20);
-    if (recv_icmp->type == ICMP_ECHO_REPLY && recv_icmp->id == icmp->id) {
-        double rtt = (end.tv_sec - start.tv_sec) * 1000.0 +
-                     (end.tv_usec - start.tv_usec) / 1000.0;
-        printf("응답 from %s: seq=%d time=%.2f ms\n", inet_ntoa(from.sin_addr), recv_icmp->sequence, rtt);
-    }
-    else{
-        printf("예상치 않은 응답 수신\n");
-    }
+    // 통계 출력
+    printf("\n--- %s ping 통계 ---\n", hostname);
+    printf("전송: %d, 수신: %d, 손실: %d%%, 평균 시간: %.2f ms\n",
+           sent_count, recv_count,
+           sent_count ? ((sent_count - recv_count) * 100 / sent_count) : 0,
+           recv_count ? (total_rtt / recv_count) : 0.0);
 
     close(sock);
     return 0;
