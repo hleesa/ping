@@ -231,9 +231,25 @@ int main(int argc, char* argv[]) {
                        sizeof(struct icmp_message), hostname, seq, ttl, rtt);
             }
             else if (recv_icmp->hdr.type == ICMP_DEST_UNREACH) {
-                if (verbose) {
-                    printf("오류: Destination Unreachable (코드 %d)", recv_icmp->hdr.code);
+                const char* reason = NULL;
+                switch (recv_icmp->hdr.code) {
+                    case 0:
+                        reason = "Destination Not Unreachable";
+                        break;
+                    case 1:
+                        reason = "Destination Host Unreachable";
+                        break;
+                    case 2:
+                        reason = "Protocol Unreachable";
+                        break;
+                    case 3:
+                        reason = "Port Unreachable";
+                        break;
+                    default:
+                        reason = "Destination Unreachable (Unknown reason)";
+                        break;
                 }
+                printf("From %s icmp_seq=%d %s\n", inet_ntoa(from.sin_addr), seq, reason);
             }
             else if (recv_icmp->hdr.type == ICMP_TIME_EXCEEDED) {
                 if (verbose) {
