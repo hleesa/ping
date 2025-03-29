@@ -165,6 +165,12 @@ int main(int argc, char* argv[]) {
         perror("소켓 생성 실패");
         return 1;
     }
+    int broadcast = 1;
+    if(setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0){
+        perror("브로드캐스트 옵션 설정 실패");
+        close(sock);
+        return 1;
+    }
 
     struct sockaddr_in dest;
     memset(&dest, 0, sizeof(dest));
