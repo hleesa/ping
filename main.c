@@ -201,6 +201,7 @@ int main(int argc, char* argv[]) {
 
     int seq = 0;
     while (1) {
+        double seq_start = get_current_time_ms();
 
         char packet[PACKET_SIZE];
         memset(packet, 0, PACKET_SIZE);
@@ -216,49 +217,66 @@ int main(int argc, char* argv[]) {
         sendto(sock, packet, PACKET_SIZE, 0, (struct sockaddr*) &dest, sizeof(dest));
         stats->transmitted++;
 
-        char recv_packet[PACKET_SIZE];
-        struct sockaddr_in from;
-        socklen_t from_len = sizeof(from);
-        int received = recvfrom(sock, recv_packet, PACKET_SIZE, 0, (struct sockaddr*) &from, &from_len);
-        if (received > 0) {
-            double rtt = get_current_time_ms() - start_time;
-            update_stats(stats, rtt);
-            struct icmp_message* recv_icmp = (struct icmp_message*) (recv_packet + 20);
-            int ttl = recv_packet[8];
+        double wait_start = get_current_time_ms();
+        while (get_current_time_ms() - wait_start < 300) {
+            fd_set readfds;
+            struct timeval tv;
+            FD_ZERO(&readfds);
+            FD_SET(sock, &readfds);
+            tv.tv_sec = 0;
+            tv.tv_usec = 100000;
 
-            if (recv_icmp->hdr.type == ICMP_ECHO_REPLY) {
-                printf("%lu bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
-                       sizeof(struct icmp_message), hostname, seq, ttl, rtt);
-            }
-            else if (recv_icmp->hdr.type == ICMP_DEST_UNREACH) {
-                const char* reason = NULL;
-                switch (recv_icmp->hdr.code) {
-                    case 0:
-                        reason = "Destination Not Unreachable";
-                        break;
-                    case 1:
-                        reason = "Destination Host Unreachable";
-                        break;
-                    case 2:
-                        reason = "Protocol Unreachable";
-                        break;
-                    case 3:
-                        reason = "Port Unreachable";
-                        break;
-                    default:
-                        reason = "Destination Unreachable (Unknown reason)";
-                        break;
-                }
-                printf("From %s icmp_seq=%d %s\n", inet_ntoa(from.sin_addr), seq, reason);
-            }
-            else if (recv_icmp->hdr.type == ICMP_TIME_EXCEEDED) {
-                if (verbose) {
-                    printf("오류: Time Exceeded (코드 %d)", recv_icmp->hdr.code);
+            int ret = select(sock + 1, &readfds, NULL, NULL, &tv);
+            if (ret > 0 && FD_ISSET(sock, &readfds)) {
+                char recv_packet[PACKET_SIZE];
+                struct sockaddr_in from;
+                socklen_t from_len = sizeof(from);
+
+                int received = recvfrom(sock, recv_packet, PACKET_SIZE, 0, (struct sockaddr*) &from, &from_len);
+                if (received > 0) {
+                    double rtt = get_current_time_ms() - start_time;
+                    update_stats(stats, rtt);
+                    struct icmp_message* recv_icmp = (struct icmp_message*) (recv_packet + 20);
+                    int ttl = recv_packet[8];
+
+                    if (recv_icmp->hdr.type == ICMP_ECHO_REPLY) {
+                        printf("%lu bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
+                               sizeof(struct icmp_message), inet_ntoa(from.sin_addr), seq, ttl, rtt);
+                    }
+                    else if (recv_icmp->hdr.type == ICMP_DEST_UNREACH) {
+                        const char* reason = NULL;
+                        switch (recv_icmp->hdr.code) {
+                            case 0:
+                                reason = "Destination Not Unreachable";
+                                break;
+                            case 1:
+                                reason = "Destination Host Unreachable";
+                                break;
+                            case 2:
+                                reason = "Protocol Unreachable";
+                                break;
+                            case 3:
+                                reason = "Port Unreachable";
+                                break;
+                            default:
+                                reason = "Destination Unreachable (Unknown reason)";
+                                break;
+                        }
+                        printf("From %s icmp_seq=%d %s\n", inet_ntoa(from.sin_addr), seq, reason);
+                    }
+                    else if (recv_icmp->hdr.type == ICMP_TIME_EXCEEDED) {
+                        if (verbose) {
+                            printf("오류: Time Exceeded (코드 %d)", recv_icmp->hdr.code);
+                        }
+                    }
                 }
             }
         }
-        sleep(1);
-        ++seq;
+        double elapsed = get_current_time_ms() - seq_start;
+        if (elapsed < 1000) {
+            usleep((useconds_t) (1000.0 - elapsed) * 1000);
+        }
+
     }
     close(sock);
     return 0;
