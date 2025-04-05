@@ -127,7 +127,7 @@ int main(int argc, char* argv[]) {
         if(strcmp(argv[i], "-v") == 0){
             verbose = 1;
         }
-        else if (strcmp(argv[i], "-?") == 0){
+        else if (strcmp(argv[i], "-?") == 0 || strcmp(argv[i], "--help") == 0) {
             print_help();
             return 0;
         }
@@ -240,8 +240,16 @@ int main(int argc, char* argv[]) {
                     int ttl = recv_packet[8];
 
                     if (recv_icmp->hdr.type == ICMP_ECHO_REPLY) {
-                        printf("%lu bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
-                               sizeof(struct icmp_message), inet_ntoa(from.sin_addr), seq, ttl, rtt);
+                        if (recv_icmp->body.echo.identifier == getpid()) {
+                            printf("%lu bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
+                                   sizeof(struct icmp_message), inet_ntoa(from.sin_addr), seq, ttl, rtt);
+                        }
+                        else {
+                            if (verbose) {
+                                printf("다른 프로세스의 응답 무시됨 (identifier=%d)\n", recv_icmp->body.echo.identifier);
+                            }
+                        }
+
                     }
                     else if (recv_icmp->hdr.type == ICMP_DEST_UNREACH) {
                         const char* reason = NULL;
